@@ -1,0 +1,404 @@
+proc Control.ReadKey  uses ax
+.Wait:
+        mov ah,01h
+        int 16h
+        jz .Wait
+
+        xor ah,ah
+        int 16h
+
+        cmp ah,50h
+        jne .L0
+        ;arr down
+
+        mov ax, word[HighlightPos]
+        inc ax
+        cmp ax, word[PrintedEntCount]
+        je .Check
+
+        cmp word[HighlightPos],LastLineNum-1
+        je .Check
+
+        ;Move highlighter
+        stdcall Interface.Highlight,word[HighlightPos],SAttr
+        inc word[HighlightPos]
+        stdcall Interface.Highlight,word[HighlightPos],HAttr
+        jmp .L2
+
+.Check:
+        cmp word[PrintedEntCount],LastLineNum
+        je .ScrollDown
+
+        jmp .Wait
+
+.ScrollDown:
+
+        stdcall Interface.CleanScreenDirs
+        inc word[ScrollPos]
+        stdcall FAT.ReadAllEntrys
+
+        cmp word[PrintedEntCount],LastLineNum
+        je .SkipDec
+        dec word[HighlightPos]
+.SkipDec:
+        stdcall Interface.Highlight,word[HighlightPos],HAttr
+        jmp .L2
+
+.L0:
+        cmp ah,48h
+        jne .L1
+        ;arr up
+
+
+
+        cmp word[HighlightPos],0
+        je .CheckU
+
+        ;Move highlighter
+        stdcall Interface.Highlight,word[HighlightPos],SAttr
+        dec word[HighlightPos]
+        stdcall Interface.Highlight,word[HighlightPos],HAttr
+        jmp .L2
+
+.CheckU:
+        cmp word[ScrollPos],0
+        jne .ScrollUp
+
+        jmp .Wait
+
+.ScrollUp:
+
+        stdcall Interface.CleanScreenDirs
+        dec word[ScrollPos]
+        stdcall FAT.ReadAllEntrys
+        stdcall Interface.Highlight,word[HighlightPos],HAttr
+        jmp .L2
+
+
+.L1:
+        cmp ah,1ch
+        jne .L2
+        ;execute
+
+        stdcall CheckIfDir,word[HighlightPos]      ;ax=0 => not dir  ax=1 => dir
+        test ax,ax
+        jz .Com
+
+        pusha
+        popa
+
+
+
+        stdcall ChangeDirParams,word[HighlightPos]
+        stdcall Interface.CleanScreenDirs
+        stdcall FAT.ReadAllEntrys
+        stdcall Interface.Highlight,word[HighlightPos],HAttr
+        jmp .L2
+
+.Com:
+        stdcall CheckIfCom,word[HighlightPos]
+        test ax,ax
+        jz .Exe
+
+
+        mov si,FileSectorTable+2
+        mov ax,[HighlightPos]
+        shl ax,1
+        add si,ax
+        mov si,word[ds:si]
+
+        stdcall Console.Init
+        stdcall Execute.ComProgram,si
+
+        stdcall Interface.Init
+
+        mov ax,word[CurrentDirSector]
+        test ax,ax
+        jz .Skip
+        stdcall FAT.ReloadDir, word[CurrentDirSector]
+        jmp .Cont
+.Skip:
+        stdcall FAT.ReloadRootDir
+.Cont:
+        stdcall FAT.ReloadFatTable
+        stdcall FAT.ReadAllEntrys
+        stdcall Interface.Highlight,word[HighlightPos],HAttr
+        jmp .L2
+
+.Exe:
+
+        stdcall CheckIfExe,word[HighlightPos]
+        test ax,ax
+        jz .UnableToOpen
+
+
+
+
+        mov si,FileSectorTable+2
+        mov ax,[HighlightPos]
+        shl ax,1
+        add si,ax
+        mov si,word[ds:si]
+
+        stdcall Console.Init
+        stdcall Execute.ExeProgram,si
+
+        stdcall Interface.Init
+
+        mov ax,word[CurrentDirSector]
+        test ax,ax
+        jz .Skip1
+        stdcall FAT.ReloadDir, word[CurrentDirSector]
+        jmp .Cont1
+.Skip1:
+        stdcall FAT.ReloadRootDir
+.Cont1:
+        stdcall FAT.ReloadFatTable
+        stdcall FAT.ReadAllEntrys
+        stdcall Interface.Highlight,word[HighlightPos],HAttr
+        jmp .L2
+
+
+
+
+.UnableToOpen:
+        jmp .L2
+
+.L2:
+        jmp .Wait
+
+        ret
+endp
+
+
+
+
+proc  ChangeDirParams uses es ds si di ax bx,\
+      Pos
+
+
+
+        mov word[ScrollPos],0
+        mov word[HighlightPos],0
+
+
+        mov si,FileSectorTable+2
+        mov ax,[Pos]
+        shl ax,1
+        add si,ax
+        mov si,word[ds:si]
+
+        push es
+
+        push word[CurrentDirSegment]
+        pop es
+
+        mov ax,[es:si+26]
+
+        pop es
+
+
+
+        mov bx,ax
+        mov word[CurrentDirSector],ax
+
+        test bx,bx
+        jnz .NotRootDir
+        stdcall FAT.ReloadRootDir
+
+        push word[RootDirSegment]
+        pop  word[CurrentDirSegment]
+        jmp .EndProc
+
+
+.NotRootDir:
+        push DirMemSegment
+        pop word[CurrentDirSegment]
+
+        stdcall FAT.ReloadDir, word[CurrentDirSector]
+
+.EndProc:
+
+        ret
+endp
+
+
+
+
+proc FAT.ReloadDir uses es ds si di ax bx,\
+     SectorNum
+
+        mov bx,[SectorNum]
+
+
+        mov word[DAP.BufOffset],0
+        mov word[DAP.BufSegment],DirMemSegment
+
+
+
+        push 0
+        pop  es
+
+        push word[es:SecPerCluster]
+        pop  word[DAP.SecCount]
+        mov  byte[DAP.SecCount+1],0
+
+        push word[FatSegment]
+        pop es
+
+
+
+.ReadSectors:
+        mov ax,bx
+        shl bx,1   ; *2, 2 bytes per sect
+
+        sub ax,2
+        mul word[ds:DAP.SecCount]
+
+        push word[ds:FirstDataSector]   ;change DAP to read cluster
+        pop word[ds:DAP.FirstSectMain]
+        add word[ds:DAP.FirstSectMain],ax
+
+
+        ;pusha
+        ;mov ax,word[DAP.BufSegment]   ;debug
+        ;mov bx,word[DAP.BufOffset]
+        ;mov cx,word[DAP.SecCount]
+        ;mov dx,word[DAP.FirstSectMain]
+        ;popa
+
+
+
+        stdcall FAT.ReadSectors           ;read cluster  if ax<>0 then error
+
+
+                                     ;inc buffer address
+        mov ax,20h
+        mul word[DAP.SecCount]
+        add word[DAP.BufSegment],ax
+
+
+        mov bx,word[es:bx]         ;check if last sector or corrupted
+        cmp bx,0xFFFF
+        je .EndProc
+        cmp bx,0xFFF7
+        je .EndProc
+        jmp .ReadSectors
+
+
+.EndProc:
+
+        ret
+endp
+
+
+
+
+proc CheckIfDir uses es di bx,\
+     Pos
+
+        push TextModeVideoMemorySegm
+        pop  es
+
+        mov ax,[Pos]
+        mov bx,80
+        mul bx
+        add ax,StartPos
+        shl ax,1
+        mov di,ax
+
+        xor ax,ax
+
+
+        mov bl,byte[es:di+120]
+        cmp bl,'D'
+        jne .EndProc
+        mov bl,byte[es:di+122]
+        cmp bl,'I'
+        jne .EndProc
+        mov bl,byte[es:di+124]
+        cmp bl,'R'
+        jne .EndProc
+        inc ax
+
+.EndProc:
+        ret
+endp
+
+
+
+
+proc CheckIfCom uses es di bx,\
+     Pos
+
+        push TextModeVideoMemorySegm
+        pop  es
+
+        mov ax,[Pos]
+        mov bx,80
+        mul bx
+        add ax,StartPos
+        shl ax,1
+        mov di,ax
+
+        xor ax,ax
+
+
+        mov bl,byte[es:di+120]
+        cmp bl,'C'
+        jne .EndProc
+        mov bl,byte[es:di+122]
+        cmp bl,'O'
+        jne .EndProc
+        mov bl,byte[es:di+124]
+        cmp bl,'M'
+        jne .EndProc
+        inc ax
+
+.EndProc:
+        ret
+endp
+
+
+
+
+proc CheckIfExe uses es di bx,\
+     Pos
+
+        push TextModeVideoMemorySegm
+        pop  es
+
+        mov ax,[Pos]
+        mov bx,80
+        mul bx
+        add ax,StartPos
+        shl ax,1
+        mov di,ax
+
+        xor ax,ax
+
+
+        mov bl,byte[es:di+120]
+        cmp bl,'E'
+        jne .EndProc
+        mov bl,byte[es:di+122]
+        cmp bl,'X'
+        jne .EndProc
+        mov bl,byte[es:di+124]
+        cmp bl,'E'
+        jne .EndProc
+        inc ax
+
+.EndProc:
+        ret
+endp
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,3 @@
+OpenedFilesSegmTable dw 20 dup FilesSegment
+OpendFileReadOffset dw 20 dup 0
+OpenedFilesCount dw 0

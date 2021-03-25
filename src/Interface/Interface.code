@@ -1,0 +1,715 @@
+proc Interface.Redraw uses es ds
+		pusha
+
+
+		push $B800
+		pop es
+
+		mov ax,0003h
+		int 10h
+
+
+		mov cx,80
+		mov ax,$7e20
+		xor di,di
+
+		rep stosw
+
+		mov cx,80*23
+		mov ax,$1e20
+		rep stosw
+
+		mov cx,80
+		mov ax,$7f20
+		rep stosw
+
+
+		mov cx,21            ;scrollLine
+		mov di,159*2+160-2
+
+		.Loop:
+		mov ax,30B0h
+		stosw
+		add di,80*2-2
+		loop .Loop
+
+
+		mov word[es:78*2+160+160],1f18h  ;arrows
+		mov word[es:78*2+160*22], 1f19h
+
+		mov cx,78                      ;PerimLines
+		mov di,162
+		mov ax,13C4h
+		rep stosw
+
+		mov cx,78
+		add di,160*21+4
+		rep stosw
+
+		mov word[es:160],13DAh
+		mov word[es:160+79*2],13BFh
+
+		mov word[es:160*2],13B3h
+
+		mov di,160*2+79*2
+		mov cx,21
+		mov ax,13B3h
+
+		.Loop1:
+
+		stosw
+		stosw
+		add di,78*2
+		loop .Loop1
+
+
+		sub di,2+78*2
+		mov word[es:di],13C0h
+
+		mov word[es:di+79*2],13D9h
+
+		mov ax,13B3h
+		mov di,160*2+77*2
+		mov cx,21
+
+		mov word[es:160+77*2],13C2h
+
+		.Loop2:
+		stosw
+		add di,160-2
+		loop .Loop2
+
+		mov word[es:di],13C1h
+
+
+
+		mov di,162*3-4
+		mov cx,76
+		mov ax,13C4h
+		rep stosw
+
+		mov word[es:162*3-6],13C3h
+
+		mov word[es:162*3-6+77*2],13B4h
+
+
+		mov word[es:160+65*2],13C2h
+		mov word[es:160+65*2+79*2+2],13B3h
+		mov word[es:160+65*2+79*4+4],13C1h
+
+
+
+
+
+
+		;stdcall Interface.OutputStr, 1,HelpStrI,74h   ;Hints and Buttons
+		;mov word[es:di],71B3h
+
+
+		;stdcall Interface.OutputStr,12,AboutStrI,74h
+		;mov word[es:di],71B3h
+
+
+		stdcall Interface.OutputStr,65,SlaWindowsStrI,7eh
+
+
+		mov word[es:160*24+2],7c18h
+		stdcall Interface.OutputStr,80*24+3,ScrollUpStrI,79h
+		mov word[es:di],71B3h
+
+
+		mov word[es:160*24+30],7c19h
+		stdcall Interface.OutputStr,80*24+17,ScrollDownStrI,79h
+		mov word[es:di],71B3h
+
+
+		stdcall Interface.OutputStr,80*24+31,EnterStrI,7ch
+
+
+		stdcall Interface.OutputStr,80*24+37,ExecuteStrI,79h
+		mov word[es:di],71B3h
+
+
+		stdcall Interface.OutputStr,80*24+47,EscStrI,7ch
+
+
+		stdcall Interface.OutputStr,80*24+56,PowerMgmtStrI,79h
+		mov word[es:di],71B3h
+
+
+		stdcall Interface.OutputStr,160+30,FileNameStrI,1eh
+
+		stdcall Interface.OutputStr,160+69,SizeStrI,1eh
+
+		popa
+		ret
+endp
+
+
+
+
+
+
+proc Interface.ReadAllEntrys uses es ds dx cx ax si di bx
+
+       ; push [OSSegment]
+       ; pop es
+
+        ;push [es:CurrentDirSegment]
+        ;pop  ds
+
+        xor si,si
+
+        mov cx,LineCount
+        mov word[es:CurrPrintPos],StartPos
+        mov word[es:PrintedEntCount],0
+        mov bx, word[es:ScrollPos]
+		mov word[isFirstIteration], 0
+		
+.Loop:		
+		cmp word[isFirstIteration],0
+		jne .NotFirst
+		mov dx, search_all_str
+		mov ah,4eh
+		int 21h
+		jmp .Cont0
+.NotFirst:
+        mov dx, search_all_str
+		mov ah,4fh
+		int 21h
+.Cont0:
+		cmp ax,2
+        je .EndProc
+		inc word[isFirstIteration]
+		
+		
+		dec bx
+		cmp bx,-1
+		jg .Loop
+		
+		
+		
+		
+		push ds
+		push cx
+		mov ds,ax
+		mov si,dx
+		mov di,long_name_buf
+		mov cx,256
+		rep movsb
+		pop cx
+		pop ds
+		
+
+		
+		mov si,80h+21 ; to read attribute
+
+        cmp byte[ds:si],$E5
+        je .NextIt
+        cmp byte[ds:si],$05
+        je .NextIt
+        cmp byte[ds:si],08h
+        je .NextIt
+        cmp byte[ds:si],02h
+        je .NextIt
+        cmp byte[ds:si],04h
+        je .NextIt
+		
+		
+
+        stdcall Interface.PrintDirEnt,long_name_buf,word[ds:CurrPrintPos],[ds:80h+1ah];file size
+        add word[es:CurrPrintPos],80
+
+
+        inc word[es:PrintedEntCount]
+        jmp .Cont
+		
+.NextIt:        
+        inc cx
+.Cont:
+        loop .Loop
+.EndProc:
+
+        ret
+endp
+
+
+
+
+
+proc Interface.OutputStr uses si cx ax es ds ,\
+     Position, StrLabel,Attribute
+
+        mov di,[Position]
+        shl di,1
+        mov si,[StrLabel]
+        movzx cx,byte[ds:si]
+        inc si
+.Loop:							
+        mov al,[ds:si]
+        mov ah,byte[Attribute]
+        mov word[es:di],ax
+
+        inc si
+        add di,2
+        loop .Loop
+
+        add di,2
+        ret
+endp
+
+
+
+
+proc Interface.CleanVideoMemory uses es ax cx ds
+
+        push TextModeVideoMemorySegm
+        pop es
+        mov ax,0x0f00
+        mov cx,80*25
+        xor di,di
+        rep stosw
+        ret
+endp
+
+
+
+
+proc Interface.GetParams uses es ds
+
+        pusha
+        mov ah,0fh
+        int 10h
+
+        mov byte[VideoMode],al
+        mov byte[ScreenWidth],ah
+        mov byte[VideoPageNum],bh
+        popa
+
+        ret
+endp
+
+
+
+proc Interface.SelectVideoPage uses es ds, \
+     PageNum
+
+        pusha
+        mov ax, 0;word[VideoPageNum]
+        mov ah,05h
+        int 10h
+        popa
+        ret
+endp
+
+
+
+
+proc Interface.SetTextMode
+        pusha
+        mov ax,0003h
+        int 10h
+        popa
+        ret
+endp
+
+
+proc Interface.HideCursor
+
+        pusha
+
+        mov cx,2020h
+        mov ah, 01h
+        int 10h
+
+        popa
+        ret
+endp
+
+
+
+
+proc  Interface.Init
+
+        stdcall Interface.SelectVideoPage,0
+        stdcall Interface.SetTextMode
+        stdcall Interface.Redraw
+        stdcall Interface.HideCursor
+
+        ret
+endp
+
+
+proc Interface.ParseStr uses es ds ds di ax cx,\
+     StrLabel,Size
+
+
+
+        mov si,[StrLabel]
+        mov di,FNStrBuf
+
+        mov al,20h
+        mov cx,70
+        rep stosb
+
+        mov di,FNStrBuf
+
+
+        movzx cx,byte[ds:si]
+        inc si
+        add si,cx
+        sub si,3
+
+
+        mov al,[es:si]
+        cmp al,5ah
+        jbe .Skip1
+        sub al,'a'-'A'
+.Skip1:
+        mov [es:di+60],al
+        inc si
+
+
+
+        mov al,[es:si]
+        cmp al,5ah
+        jbe .Skip2
+        sub al,'a'-'A'
+.Skip2:
+        mov [es:di+61],al
+        inc si
+
+        mov al,[es:si]
+        cmp al,5ah
+        jbe .Skip3
+        sub al,'a'-'A'
+.Skip3:
+        mov [es:di+62],al
+
+
+        mov si,[StrLabel]
+        movzx cx,[es:si]
+
+        inc si
+        sub cx,4
+
+        cmp cx,55
+        jl .L0
+        mov cx,56
+        mov byte[es:di+58],'.'
+        mov byte[es:di+57],'.'
+        mov byte[es:di+56],'.'
+
+.L0:
+
+        rep movsb
+
+        mov di,numBuf
+        mov cx,5
+        mov al,20h
+        rep stosb
+        stdcall IntToStr,[Size]
+
+        cmp byte[es:numBuf],'0'
+        jne .NotDir
+        mov byte[es:numBuf],'-'
+.NotDir:
+        mov si,numBuf
+        mov di,FNStrBuf
+        add di,65
+        mov cx,5
+        rep movsb
+        mov byte[es:di],'b'
+
+        ret
+endp
+
+
+
+
+
+
+
+
+
+proc Interface.PrintDirEnt uses es ds si di cx,\
+     StrLabel,CurrPosL,Size
+
+        stdcall Interface.ParseStr,[StrLabel],[Size]
+
+        push es
+        pop  ds
+
+        push TextModeVideoMemorySegm
+        pop es
+
+        mov si,FNStrBuf
+        mov cx,75
+        mov di,[CurrPosL]
+        shl di,1
+
+.Loop:
+        mov al,byte[ds:si]
+        mov byte[es:di],al
+
+        inc si
+        add di,2
+
+        loop .Loop
+
+        ret
+endp
+
+
+
+
+proc Interface.Highlight uses es ds si di cx bx ax dx,\
+     LineNum,Attribute
+
+        push TextModeVideoMemorySegm
+        pop  es
+
+        mov ax,[LineNum]
+        mov bx,80
+        mul bx
+        mov di,ax
+
+        add di,StartPos-1
+        shl di,1
+
+        push di
+
+        mov cx,73
+        mov ax,[Attribute]
+.Loop:
+        mov byte[es:di+1],al
+        add di,2
+        loop .Loop
+
+        pop di
+
+
+        ;cmp [Attribute],SAttr
+        ;je .Next
+        ;mov byte[es:di+155],1fh
+        ;jmp .EndProc
+.Next:
+        ;mov byte[es:di+155],31h
+.EndProc:
+        ret
+endp
+
+
+
+
+
+
+
+
+
+proc IntToStr uses si di ax bx cx dx es ds,\
+     Number
+
+        xor si,si
+        mov ax,[Number]
+@@:
+        mov cx,0
+        mov bx,10
+        mov dx,0
+.loop:
+        idiv bx
+        push dx
+        mov dx,0
+
+        inc cx
+        test al,al
+        jz @F
+        jmp .loop
+
+@@:
+        pop ax
+        add al,30h
+        mov [numBuf+si],al
+        inc si
+        loop @B
+
+        mov byte[numBuf+si],0
+
+
+        ret
+endp
+
+
+proc Interface.ScrollUp_Old uses es ds
+
+        pusha
+
+        mov ax,0613h
+        mov cx,0401h
+        mov dx,164Ch
+        mov bh,SAttr
+        int 10h
+
+        popa
+        ret
+endp
+
+
+
+proc Interface.ScrollDown_Old uses es ds
+
+        pusha
+
+        mov ax,0713h
+        mov cx,0401h
+        mov dx,164Ch
+        mov bh,SAttr
+        int 10h
+
+        popa
+        ret
+endp
+
+
+proc Interface.CleanScreenDirs uses es cx di ax    ;
+
+        push $B800
+        pop  es
+
+        mov  ax,1e00h
+
+        mov di,StartPos-1
+        shl di,1
+
+        mov cx,19
+.Loop:
+        push cx
+        mov cx,76
+        rep stosw
+        pop cx
+        add di,8
+        loop .Loop
+
+
+
+
+
+        mov cx,0401h
+        mov dx,164Ch
+        mov bh,SAttr
+        int 10h
+
+
+        ret
+endp
+
+
+
+
+proc Interface.CheckIfDir uses es di bx,\
+     Pos
+
+        push TextModeVideoMemorySegm
+        pop  es
+
+        mov ax,[Pos]
+        mov bx,80
+        mul bx
+        add ax,StartPos
+        shl ax,1
+        mov di,ax
+
+        xor ax,ax
+
+
+        mov bl,byte[es:di+120]
+        cmp bl,'D'
+        jne .EndProc
+        mov bl,byte[es:di+122]
+        cmp bl,'I'
+        jne .EndProc
+        mov bl,byte[es:di+124]
+        cmp bl,'R'
+        jne .EndProc
+        inc ax
+
+.EndProc:
+        ret
+endp
+
+
+
+
+proc Interface.CheckIfCom uses es di bx,\
+     Pos
+
+        push TextModeVideoMemorySegm
+        pop  es
+
+        mov ax,[Pos]
+        mov bx,80
+        mul bx
+        add ax,StartPos
+        shl ax,1
+        mov di,ax
+
+        xor ax,ax
+
+
+        mov bl,byte[es:di+120]
+        cmp bl,'C'
+        jne .EndProc
+        mov bl,byte[es:di+122]
+        cmp bl,'O'
+        jne .EndProc
+        mov bl,byte[es:di+124]
+        cmp bl,'M'
+        jne .EndProc
+        inc ax
+
+.EndProc:
+        ret
+endp
+
+
+
+
+proc Interface.CheckIfExe uses es di bx,\
+     Pos
+
+        push TextModeVideoMemorySegm
+        pop  es
+
+        mov ax,[Pos]
+        mov bx,80
+        mul bx
+        add ax,StartPos
+        shl ax,1
+        mov di,ax
+
+        xor ax,ax
+
+
+        mov bl,byte[es:di+120]
+        cmp bl,'E'
+        jne .EndProc
+        mov bl,byte[es:di+122]
+        cmp bl,'X'
+        jne .EndProc
+        mov bl,byte[es:di+124]
+        cmp bl,'E'
+        jne .EndProc
+        inc ax
+
+.EndProc:
+        ret
+endp
+
+
+
+
+
+
+
+
+

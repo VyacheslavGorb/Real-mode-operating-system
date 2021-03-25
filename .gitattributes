@@ -1,0 +1,4 @@
+*.code linguist-language=Assembly
+*.const linguist-language=Assembly
+*.dat linguist-language=Assembly
+*.asm linguist-language=Assembly

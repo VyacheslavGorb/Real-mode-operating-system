@@ -1,0 +1,5 @@
+
+
+CursorCol dw ?
+CursorRow dw ?
+CursorPos dw 0

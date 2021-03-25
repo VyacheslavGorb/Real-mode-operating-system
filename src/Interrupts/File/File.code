@@ -1,0 +1,85 @@
+proc File.LoadFile uses es di ax bx si dx ds,\
+	FileOffset
+		
+		push 0
+        pop es
+		
+		mov si,OpenedFilesSegmTable
+		add si,word[ds:OpenedFilesCount]
+		add si,word[ds:OpenedFilesCount]
+		
+		inc word[ds:OpenedFilesCount]
+		
+
+        push word[es:SecPerCluster]
+        pop  word[ds:DAP.SecCount]
+
+        mov byte[ds:DAP.SecCount+1],0
+
+
+        mov word[DAP.BufOffset],0
+        mov word[DAP.BufSegment],0
+
+        push word[CurrentDirSegment]
+        pop es
+
+        mov di,[FileOffset]
+		
+		push si		
+		mov si,word[ds:OpenedFilesCount]
+		shl si,1		
+		mov bx, [es:di+DirEntry_FileSize]
+		add bx, 10h
+		shr bx,4
+		add [ds:si+OpenedFilesSegmTable],bx		
+		pop si
+		
+        mov bx, [es:di+26]           ; bx <= first sectNum
+
+		
+        push word[ds:si]	;OpenedFilesSegmTable[OpenedFilesCount-1]
+        pop  word[DAP.BufSegment]
+
+        push word[FatSegment]
+        pop es
+
+
+.ReadSectors:
+        mov ax,bx
+        shl bx,1   ; *2, 2 bytes per sect
+
+        sub ax,2
+        mul word[ds:DAP.SecCount]
+
+        push word[ds:FirstDataSector]   ;change DAP to read cluster
+        pop word[ds:DAP.FirstSectMain]
+        add word[ds:DAP.FirstSectMain],ax
+
+        pusha
+        mov ax,word[ds:DAP.BufSegment]     ;for debug
+        mov bx,word[ds:DAP.BufOffset]
+        mov cx,word[ds:DAP.SecCount]
+        mov dx,word[ds:DAP.FirstSectMain]
+        popa
+
+
+        stdcall FAT.ReadSectors           ;read cluster  if ax<>0 then error
+
+
+                                     ;inc buffer address
+        mov ax,20h
+        mul word[DAP.SecCount]
+        add word[DAP.BufSegment],ax
+
+
+        mov bx,word[es:bx]         ;check if last sector or corrupted
+        cmp bx,0xFFFF
+        je .EndProc
+        cmp bx,0xFFF7
+        je .EndProc
+        jmp .ReadSectors
+.EndProc:
+		
+		
+		ret
+endp

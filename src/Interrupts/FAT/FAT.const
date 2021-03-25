@@ -1,0 +1,16 @@
+		FirstMbrEntryAddr = 1beh
+		MbrSectorAddr     = 8
+		FATz16            = 7c00h+22
+		NumFATs           = 7c00h+16
+		BPB_ResvdSecCnt   = 7c00h+14
+		RootEntCount      = 7c00h+17
+		BytesPerSect      = 7c00h+11
+		SecPerCluster     = 7c00h+13
+		CodeAddr          = 7c3eh
+		RootDirEntry_Sector=26
+		DirEntry_Sector=26
+		DirEntry_Attribute=11
+		DirEntry_FileSize = 28
+		DirEntry_Time = 14
+		DirEntry_Date = 16
+		DirMemSegment = 400h

@@ -1,0 +1,28 @@
+		DAP:
+		.DAPSize         db 10h
+		.Reserved        db 0
+		.SecCount        dw 0001h
+		.BufOffset       dw 0000h
+		.BufSegment      dw 0000h
+		.FirstSectMain   dw 0000h
+		.FirstSect2      dw 0000h
+		.FirstSect3      dd 00000000h
+
+
+		RootDirSegment  dw 0800h
+		FatSegment      dw ?
+		DriveIndex      dw ?
+		FirstDataSector dw ?
+
+
+		FirstFatSector     dw ?
+		RootDirSectors     dw ?
+		FirstRootDirSecNum dw ?
+		CurrentDirSegment  dw ?
+
+		CurrentDirSector   dw ?
+
+
+		FNStr db 256 dup 0
+
+		FileSectorTable dw 20 dup 0   ;should be the last

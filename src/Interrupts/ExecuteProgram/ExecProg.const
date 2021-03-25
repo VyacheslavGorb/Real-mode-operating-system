@@ -1,0 +1,26 @@
+        RelocationTableAddr = 18h
+        ItemCount           = 06h
+        HeaderSize          = 08h
+        PageCnt             = 04h
+
+
+CSReloc = 16h
+IPReloc = 14h
+SSReloc = 0Eh
+SPReloc = 10h
+
+
+		ProgsConst		   =  16
+		ProgsCount		   =  8000h-2
+		SavedDiAddr		   =  8000h-4
+        JmpProgramAddr     =  8000h-8  - ProgsConst * 16
+        JmpOSAddr          =  8000h-12 - ProgsConst * 16
+        SPValueAddr        =  8000h-16 - ProgsConst * 16
+		SSValueAddr        =  8000h-18 - ProgsConst * 16
+        DSValueAddr        =  8000h-20 - ProgsConst * 16
+		OSDSValueAddr	   =  8000h-20 - ProgsConst * 16
+		
+        BPB_SecPerCluster  =  7c00h+13
+
+
+HeaderSegm= 51h

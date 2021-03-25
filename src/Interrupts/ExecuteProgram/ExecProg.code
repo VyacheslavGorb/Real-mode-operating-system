@@ -1,0 +1,671 @@
+proc Load.ChangeExeSegmentValues uses es ds ax cx di bx
+
+		
+		push 0
+		pop  es
+		
+		mov di,ProgramSegmentArr
+		add di,word[es:ProgsCount]
+		add di,word[es:ProgsCount]
+		
+		
+        mov ax,word[ds:di]
+        add ax,10h
+        push HeaderSegm
+        pop es
+
+        mov bx, word[es:RelocationTableAddr]
+        mov cx, word[es:ItemCount]
+        test cx,cx
+        jz .EndProc
+.Loop:
+        ;push es
+        push ax
+
+        add ax,word[es:bx+2]
+        mov di,word[es:bx]
+
+        ;push ax
+        ;add ax,word[es:HeaderSize]
+        mov ds,ax
+        ;pop ax
+
+        add word[ds:di],ax
+        pop ax
+        ;pop es
+        add bx,4
+        loop .Loop
+.EndProc:
+        ret
+endp
+
+
+
+proc Execute.ExeProgram uses es ax,\
+     FileName
+
+
+        ;mov ax,word[FileOffset]
+        stdcall FAT.FindFileInRootDir   ,[FileName]    ;if ax==00 then error bx == size in segments
+		push 0
+		pop es
+		mov di,ProgramSegmentArr
+		add di,word[es:ProgsCount]
+		add di,word[es:ProgsCount]
+		push dx
+		mov dx,word[ds:di]
+		add dx,bx
+		add dx,1000h
+		mov word[ds:di+2],dx
+		pop dx
+        stdcall Load.SetPSP   ,ax
+        stdcall Load.ExeHeader,ax   ;bx rets count of sectors
+        stdcall Load.LoadProgramExe,  ax
+        stdcall Load.SetJmpParams, ReturnControlAddrL_Exe
+        stdcall Load.ChangeExeSegmentValues
+
+        pusha
+        push 0
+        pop es
+
+		
+		mov word[ds:SavedDiAddr] , di
+		
+		mov di, word[es:ProgsCount]
+		shl di,4
+
+        push ds
+        pop word[es:di + DSValueAddr]
+        mov ax,sp
+        mov word[es:di + SPValueAddr],ax
+		mov ax,ss
+        mov word[es:di + SSValueAddr],ax
+		
+		
+		mov di, word[ds:SavedDiAddr]
+		
+
+
+
+;//////////////////////////////////////////////////////////////////////////////////////////////////
+		push 0
+        pop es
+		
+		mov si,ProgramSegmentArr
+		add si,word[es:ProgsCount]
+		add si,word[es:ProgsCount]
+		
+		
+        mov ax, word[ds:si]
+        add ax,10h
+        push HeaderSegm
+        pop  ds
+
+        mov dx,ax
+       
+		
+		
+		mov word[es:SavedDiAddr],di	;save di
+		
+		mov di, word[es:ProgsCount]
+		shl di,4
+		add di,JmpProgramAddr
+		
+		
+        mov word[es:di+2],ax
+
+        mov bx,word[ds:CSReloc]
+        add word[es:di+2],bx
+
+        mov bx,word[ds:IPReloc]
+        mov word[es:di],  bx     ;CS:IP
+
+        add ax,word[ds:SSReloc]
+        mov ss,ax
+
+        mov bx,word[ds:SPReloc]
+        mov sp,bx                            ;SS:SP
+
+        mov ecx,[es:di]
+		
+		
+		
+		mov di,word[es:SavedDiAddr]	;restore di
+		
+		
+
+        mov bp,sp
+        mov dword[ss:bp-4],ecx
+		inc word[es:ProgsCount]
+
+
+        mov ax,es
+        sub ax,10h
+        mov ds,ax
+        mov es,ax
+
+
+        xor ax,ax
+        xor bx,bx
+        xor cx,cx
+        xor dx,dx
+        xor bx,bx
+        xor si,si
+        xor di,di
+		
+
+        jmp dword[ss:bp-4]   ;Give Control to Program
+
+;/////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+ReturnControlAddrL_Exe:
+        ;restore segm state
+		
+        xor ax,ax
+        mov es,ax
+		dec word[es:ProgsCount]
+		
+		mov word[es:SavedDiAddr],di
+		
+		mov di, word[es:ProgsCount]
+		shl di,4
+		
+		
+		
+        mov sp,[es:di + SPValueAddr]
+		mov ax,[es:di + SSValueAddr]
+		mov ss,ax
+        mov ax,[es:di + DSValueAddr]
+		
+		mov di, word[es:SavedDiAddr]
+		
+        mov ds,ax
+        
+        ;sub ax,80h
+        ;mov ss,ax	
+		
+		mov es,ax
+        popa
+        ret
+
+endp
+
+
+
+
+
+
+
+
+
+
+proc Load.ExeHeader uses es di ax ds,\
+     FileOffset
+        xor cx,cx
+
+
+        push 0
+        pop es
+
+        push word[es:SecPerCluster]
+        pop  word[ds:DAP.SecCount]
+
+        mov byte[ds:DAP.SecCount+1],0
+
+
+
+        mov word[DAP.BufOffset],0
+
+        push word[CurrentDirSegment]
+        pop es
+
+        mov di,[FileOffset]
+        mov bx, [es:di+26]           ; bx <= first sectNum
+
+        push HeaderSegm
+        pop  word[DAP.BufSegment]
+
+        push word[FatSegment]
+        pop es
+
+
+.ReadSectors:
+        mov ax,bx
+        shl bx,1   ; *2, 2 bytes per sect
+
+        sub ax,2
+        mul word[ds:DAP.SecCount]
+
+        push word[ds:FirstDataSector]   ;change DAP to read cluster
+        pop word[ds:DAP.FirstSectMain]
+        add word[ds:DAP.FirstSectMain],ax
+
+
+
+        stdcall FAT.ReadSectors           ;read cluster  if ax<>0 then error
+
+
+        test cx,cx
+        jnz .SkipCalc
+
+        push es
+        push ax
+
+        push HeaderSegm
+        pop es
+
+        mov ax,[es:HeaderSize]
+        mov cl,20h
+        div cl
+        test ah,ah
+        jz .L1
+        inc al
+.L1:
+        movzx cx,al
+
+        pop ax
+        pop es
+
+.SkipCalc:
+                                     ;inc buffer address
+        mov ax,20h
+        mul word[DAP.SecCount]
+        add word[DAP.BufSegment],ax
+
+
+        mov bx,word[es:bx]
+        loop .ReadSectors
+.EndProc:
+
+        xor di,di         ;ds:si es:di
+        push HeaderSegm
+        pop es
+        mov ax,word[es:HeaderSize]
+        shl ax,4
+
+        push ax
+        xor cx,cx
+.IncCx:
+        add cx,512
+        cmp ax,cx
+        ja .IncCx
+        pop  ax
+
+        mov si,ax
+        sub cx,ax
+
+
+        mov word[ds:DAP.BufOffset],cx
+
+		push di
+
+		push 0
+		pop es
+		
+		mov di,ProgramSegmentArr
+		add di,word[es:ProgsCount]
+		add di,word[es:ProgsCount]
+
+        mov ax,word[ds:di]
+        add ax,10h
+        mov es,ax
+
+        push HeaderSegm
+        pop ds
+		
+		pop di
+
+        rep movsb
+
+        ret
+endp
+
+
+
+proc Load.LoadProgramExe uses es di ax bx,\
+     FileOffset
+
+
+        push 0
+        pop es
+
+        push word[es:SecPerCluster]
+        pop  word[ds:DAP.SecCount]
+
+        mov byte[ds:DAP.SecCount+1],0
+
+        cmp bx,0xFFFF
+        je .EndProc
+        cmp bx,0xFFF7
+        je .EndProc
+		
+				
+		push di
+		mov di,ProgramSegmentArr
+		add di,word[es:ProgsCount]
+		add di,word[es:ProgsCount]
+        push word[ds:di]
+        pop  word[DAP.BufSegment]
+        add  word[DAP.BufSegment],10h   ;PSP
+		pop di
+		
+        push word[FatSegment]
+        pop es
+
+
+.ReadSectors:
+        mov ax,bx
+        shl bx,1   ; *2, 2 bytes per sect
+
+        sub ax,2
+        mul word[ds:DAP.SecCount]
+
+        push word[ds:FirstDataSector]   ;change DAP to read cluster
+        pop word[ds:DAP.FirstSectMain]
+        add word[ds:DAP.FirstSectMain],ax
+
+
+        ;mov ax,word[DAP.BufSegment]   ;debug
+        ;mov ax,word[DAP.BufOffset]
+
+
+
+        stdcall FAT.ReadSectors           ;read cluster  if ax != 0 then error
+
+
+                                     ;inc buffer address
+        mov ax,20h
+        mul word[DAP.SecCount]
+        add word[DAP.BufSegment],ax
+
+
+        mov bx,word[es:bx]         ;check if last sector or corrupted
+        cmp bx,0xFFFF
+        je .EndProc
+        cmp bx,0xFFF7
+        je .EndProc
+        jmp .ReadSectors
+.EndProc:
+        ret
+endp
+
+
+
+
+
+
+
+
+
+
+proc Execute.ComProgram uses es ax,\
+     FileName
+
+
+        ;mov ax,word[FileOffset]
+		stdcall FAT.FindFileInRootDir   ,[FileName]    ;if ax==00 then error bx == size in segments
+		push 0
+		pop es
+		mov di,ProgramSegmentArr
+		add di,word[es:ProgsCount]
+		add di,word[es:ProgsCount]
+		push dx
+		mov dx,word[ds:di]
+		add dx,bx
+		add dx,1000h
+		mov word[ds:di+2],dx
+		pop dx
+        stdcall Load.SetPSP   ,ax
+        stdcall Load.LoadProgramCom,   ax
+        stdcall Load.SetJmpParams, ReturnControlAddrL_Com
+
+
+        pusha
+        push 0
+        pop es
+		
+		
+		mov word[es:SavedDiAddr],di
+		
+		mov di, word[es:ProgsCount]
+		shl di,4
+
+        push ds
+        pop word[es:di + DSValueAddr]
+        mov ax,sp
+        mov word[es:di + SPValueAddr],ax
+		mov ax,ss
+        mov word[es:di + SSValueAddr],ax
+
+		mov di, word[es:SavedDiAddr]
+
+		
+		mov si,ProgramSegmentArr
+		add si,word[es:ProgsCount]
+		add si,word[es:ProgsCount]
+		
+        mov ax,word[ds:si]
+        mov ss,ax
+        mov sp,0xFFFF
+        mov bp,sp
+
+		mov word[es:SavedDiAddr],di
+		
+		mov di, word[es:ProgsCount]
+		shl di,4
+		add di,JmpProgramAddr
+		
+        mov ecx,dword[es:di]
+        mov dword[ss:bp-6],ecx
+		
+		mov di, word[es:SavedDiAddr]
+		inc word[es:ProgsCount]
+
+        mov ds,ax
+        mov es,ax
+        push 0
+
+        xor ax,ax
+        xor bx,bx
+        xor cx,cx
+        xor dx,dx
+        xor bx,bx
+        xor si,si
+        xor di,di
+		
+
+		;xchg bx,bx
+        jmp dword[ss:bp-6]   ;Give Control to Program
+
+
+ReturnControlAddrL_Com:
+        ;restore segm state
+		
+        xor ax,ax
+        mov es,ax
+		dec word[es:ProgsCount]
+		
+		mov word[es:SavedDiAddr],di
+		
+		mov di, word[es:ProgsCount]
+		shl di,4
+		
+		
+		
+        mov sp,[es:di + SPValueAddr]
+		mov ax,[es:di + SSValueAddr]
+		mov ss,ax
+        mov ax,[es:di + DSValueAddr]
+		
+		mov di, word[es:SavedDiAddr]
+		
+        mov ds,ax
+        
+        ;sub ax,80h
+        ;mov ss,ax	
+		
+		mov es,ax
+        popa
+
+        ret
+endp
+
+
+
+
+
+
+proc Load.SetJmpParams uses ax es bx,\
+     ReturnControlAddr
+
+        push 0
+        pop es
+        mov bx,[ReturnControlAddr]
+		
+		mov word[es:SavedDiAddr], di
+		mov di, word[es:ProgsCount]
+		shl di,4
+		
+        mov  word[es:di+JmpOSAddr],bx
+        push word[ds:OSSegment]
+        pop  word[es:di+JmpOSAddr+2]
+
+        mov  word[es:di+JmpProgramAddr],0100h
+		
+		
+		mov si,ProgramSegmentArr
+		add si,word[es:ProgsCount]
+		add si,word[es:ProgsCount]
+		
+		
+        push word[ds:si]
+        pop  word[es:di+JmpProgramAddr+2]
+		
+		
+		mov di, word[es:SavedDiAddr]
+		
+		
+        ret
+endp
+
+
+
+
+
+
+
+
+
+proc Load.SetPSP uses si di ax cx,\
+     FileOffset
+
+        push word[CurrentDirSegment]
+        pop es
+
+        mov si,[FileOffset]
+        add si,28
+        mov eax,[es:si]
+        xor bx,bx
+        test eax,0000000Fh
+        jz .DontAdd
+        inc bx
+.DontAdd:
+
+		push 0
+		pop es
+		mov di,ProgramSegmentArr
+		add di,word[es:ProgsCount]
+		add di,word[es:ProgsCount]
+
+        shr eax,4
+        add ax,bx
+        add ax,word[ds:di]
+        mov word[PSP.wNextSeg],0x4500;ax
+		
+
+		push word[ds:di]
+        pop es
+		
+        mov si,PSP
+        xor di,di        
+        mov cx,10h
+        rep movsb
+
+        ret
+endp
+
+
+
+
+proc Load.LoadProgramCom uses es di ax bx,\
+     FileOffset
+
+        push 0
+        pop es
+		
+		mov si,ProgramSegmentArr
+		add si,word[es:ProgsCount]
+		add si,word[es:ProgsCount]
+
+        push word[es:SecPerCluster]
+        pop  word[ds:DAP.SecCount]
+
+        mov byte[ds:DAP.SecCount+1],0
+
+
+        mov word[DAP.BufOffset],0
+        mov word[DAP.BufSegment],0
+
+        push word[CurrentDirSegment]
+        pop es
+
+        mov di,[FileOffset]
+        mov bx, [es:di+26]           ; bx <= first sectNum
+
+		
+        push word[ds:si]	;ProgramSegmentArr[ProgsCount]
+        pop  word[DAP.BufSegment]
+        add  word[DAP.BufSegment],10h   ;PSP
+
+        push word[FatSegment]
+        pop es
+
+
+.ReadSectors:
+        mov ax,bx
+        shl bx,1   ; *2, 2 bytes per sect
+
+        sub ax,2
+        mul word[ds:DAP.SecCount]
+
+        push word[ds:FirstDataSector]   ;change DAP to read cluster
+        pop word[ds:DAP.FirstSectMain]
+        add word[ds:DAP.FirstSectMain],ax
+
+        pusha
+        mov ax,word[ds:DAP.BufSegment]     ;for debug
+        mov bx,word[ds:DAP.BufOffset]
+        mov cx,word[ds:DAP.SecCount]
+        mov dx,word[ds:DAP.FirstSectMain]
+        popa
+
+
+        stdcall FAT.ReadSectors           ;read cluster  if ax<>0 then error
+
+
+                                     ;inc buffer address
+        mov ax,200h
+        mul word[DAP.SecCount]
+        add word[DAP.BufOffset],ax
+
+
+        mov bx,word[es:bx]         ;check if last sector or corrupted
+        cmp bx,0xFFFF
+        je .EndProc
+        cmp bx,0xFFF7
+        je .EndProc
+        jmp .ReadSectors
+.EndProc:
+        ret
+endp

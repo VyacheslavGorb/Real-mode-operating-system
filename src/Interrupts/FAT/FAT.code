@@ -1,0 +1,460 @@
+proc FAT.ReadSectors uses ax dx cx si
+
+        mov cx,4
+.TryAgain:
+        dec cx
+        mov ah,42h     ;read from disk (LBA)
+        mov si,DAP     ;si:=DAP address
+        mov dx,word[DriveIndex]
+        int 13h
+        test cx,cx
+        jz .EndProc
+        test ah,ah
+        jnz .TryAgain
+.EndProc:
+        ret
+endp
+
+
+
+
+
+proc FAT.FindFileInRootDir uses es di si cx,\
+     FileName
+        push word[CurrentDirSegment]
+        pop es
+        xor di,di
+		xor ax,ax
+.Loop:
+        add di,20h
+        mov dx,di
+		
+        cmp byte[es:di],0
+        jz .EndProc
+		
+        mov si,[FileName]
+        mov cx,11
+        repz cmpsb
+        mov di,dx
+		jz .Found
+		
+		mov si,[FileName]
+		cmp byte[ds:si],'*'
+		jne .Loop
+		
+		cmp byte[es:di + DirEntry_Attribute], 0Fh
+		jne .Found
+		
+        jmp .Loop
+.Found:
+		
+        mov ax,di
+.EndProc:
+		mov bx,word[es:di+DirEntry_FileSize]
+		mov dx,bx
+		add bx,10h
+		shr bx,1
+        ret
+endp
+
+
+proc FAT.FindNextFile uses es di si cx,\
+     FileName,fOffset
+        push word[CurrentDirSegment]
+        pop es
+        mov di,[fOffset]
+		xor ax,ax
+.Loop:
+        add di,20h
+        mov dx,di
+		
+		cmp byte[es:di],0xE5
+        jz .Loop
+		
+        cmp byte[es:di],0
+        jz .EndProc
+		
+        mov si,[FileName]
+        mov cx,11
+        repz cmpsb
+        mov di,dx
+		jz .Found
+		
+		mov si,[FileName]
+		cmp byte[ds:si],'*'
+		jne .Loop
+		
+		cmp byte[es:di + DirEntry_Attribute], 0Fh
+		jne .Found
+		
+        jmp .Loop
+.Found:
+		
+        mov ax,di
+.EndProc:
+		mov bx,word[es:di+DirEntry_FileSize]
+		mov dx,bx
+		add bx,10h
+		shr bx,1
+        ret
+endp
+
+
+
+proc FAT.ReloadDir uses es ds si di ax bx,\
+     SectorNum
+
+        mov bx,[SectorNum]
+
+
+        mov word[DAP.BufOffset],0
+        mov word[DAP.BufSegment],DirMemSegment
+
+
+
+        push 0
+        pop  es
+
+        push word[es:SecPerCluster]
+        pop  word[DAP.SecCount]
+        mov  byte[DAP.SecCount+1],0
+
+        push word[FatSegment]
+        pop es
+
+
+
+.ReadSectors:
+        mov ax,bx
+        shl bx,1   ; *2, 2 bytes per sect
+
+        sub ax,2
+        mul word[ds:DAP.SecCount]
+
+        push word[ds:FirstDataSector]   ;change DAP to read cluster
+        pop word[ds:DAP.FirstSectMain]
+        add word[ds:DAP.FirstSectMain],ax
+
+
+        ;pusha
+        ;mov ax,word[DAP.BufSegment]   ;debug
+        ;mov bx,word[DAP.BufOffset]
+        ;mov cx,word[DAP.SecCount]
+        ;mov dx,word[DAP.FirstSectMain]
+        ;popa
+
+
+
+        stdcall FAT.ReadSectors           ;read cluster  if ax<>0 then error
+
+
+                                     ;inc buffer address
+        mov ax,20h
+        mul word[DAP.SecCount]
+        add word[DAP.BufSegment],ax
+
+
+        mov bx,word[es:bx]         ;check if last sector or corrupted
+        cmp bx,0xFFFF
+        je .EndProc
+        cmp bx,0xFFF7
+        je .EndProc
+        jmp .ReadSectors
+
+
+.EndProc:
+
+        ret
+endp
+
+
+
+proc FAT.DataInit uses ds es ax dx bx
+
+        push 0
+        pop es
+
+
+        mov ax,word[es:FATz16]  ;FATz16
+        mul byte[es:NumFATs]     ;NumFATs*FATz16 => dx:ax  (ax)
+        add ax, word[es:BPB_ResvdSecCnt] ;BPB_ResvdSecCnt + (BPB_NumFATs * BPB_FATSz16)
+
+        add ax,word[ds:FirstFatSector]
+        mov word[ds:FirstRootDirSecNum], ax
+
+        mov ax, word[es:RootEntCount] ;Root ent count
+        shl ax,5
+        add ax,word[es:BytesPerSect]  ;Bytes per sect
+        dec ax
+        xor dx,dx
+        div word[es:BytesPerSect]     ;RootDirSectors = ((BPB_RootEntCnt * 32) + (BPB_BytsPerSec - 1)) / BPB_BytsPerSec;
+        mov word[ds:RootDirSectors],ax
+        add ax,word[ds:FirstRootDirSecNum]
+        mov word[ds:FirstDataSector], ax
+
+        push word[RootDirSegment]
+        pop  word[CurrentDirSegment]
+
+        ret
+endp
+
+
+
+proc FAT.ReloadRootDir uses es ax bx
+
+        push 0
+        pop  es
+
+        push word[RootDirSegment]
+        pop  word[DAP.BufSegment]
+        mov  word[DAP.BufOffset],0
+
+        mov ax, word[RootDirSectors]
+        mov word[DAP.SecCount],ax
+
+
+
+        push word[FirstRootDirSecNum]
+        pop  word[DAP.FirstSectMain]
+
+        stdcall FAT.ReadSectors
+
+
+        ret
+endp
+
+
+
+proc FAT.ReloadFatTable uses es ax bx
+
+        push 0
+        pop  es
+
+        push word[FatSegment]
+        pop  word[DAP.BufSegment]
+        mov  word[DAP.BufOffset],0
+
+        mov ax, word[es:FATz16]
+        mov word[DAP.SecCount],ax
+
+
+
+        mov ax, word[FirstFatSector]
+        add ax,[es:BPB_ResvdSecCnt]
+        mov word[DAP.FirstSectMain],ax
+
+        call FAT.ReadSectors
+
+
+        ret
+endp
+
+
+
+
+proc FAT.ReloadBPB uses es ax bx
+
+        push 0
+        pop  es
+
+        mov word[DAP.BufSegment],0
+        mov  word[DAP.BufOffset],7c00h
+
+
+        mov word[DAP.SecCount],1
+
+        push word[FirstFatSector]
+        pop  word[DAP.FirstSectMain]
+
+        call FAT.ReadSectors
+
+        ret
+endp
+
+
+
+
+
+
+
+
+
+
+proc FAT.ReadFileName uses es ds di ax cx dx
+		
+		add si,32
+.LoopDec:
+		sub si,32
+		cmp byte[ds:si-32],0
+		je .EndLoopDec
+		cmp byte[ds:si-32],0xE5
+		je .EndLoopDec
+		cmp byte[ds:si+DirEntry_Attribute - 32],0Fh
+		je .LoopDec
+.EndLoopDec:
+
+		
+        cmp byte[ds:si+DirEntry_Attribute],0Fh
+        je .LongDirEnt
+
+        mov cx,11
+        mov di,FNStr+1
+
+        mov byte[es:FNStr],12
+
+        cmp byte[ds:si+DirEntry_Attribute],10h
+        jne .NotDir
+
+        mov cx,8
+
+        mov byte[es:di+8], 'D'
+        mov byte[es:di+9], 'I'
+        mov byte[es:di+10],'R'
+.NotDir:
+        push si
+        rep movsb
+        pop si
+
+        mov di,FNStr+1
+
+        mov al,byte[es:di+10]
+        mov byte[es:di+11],al
+
+        mov al,byte[es:di+9]
+        mov byte[es:di+10],al
+
+        mov al,byte[es:di+8]
+        mov byte[es:di+9],al
+
+        mov byte[es:di+8],20h
+
+
+        jmp .EndProc
+
+
+
+
+
+
+
+
+.LongDirEnt:
+
+
+        mov al,byte[ds:si]
+        and al,0Fh
+        movzx cx,al
+        xor ah,ah
+        dec ax
+
+        shl ax,5
+
+        add si,ax
+
+        push cx
+
+
+
+        mov di,FNStr+1
+        mov byte[es:FNStr],0
+
+.LoopMain:
+        push cx
+
+        push si
+        mov cx,5
+        inc si
+.ReadFirst5Sym:
+        mov ax,[ds:si]
+        cmp ax,$FFFF
+        je .Skip
+        cmp ax,$0000
+        je .Skip
+        mov byte[es:di],al
+
+        add si,2
+        inc di
+        inc byte[es:FNStr]
+
+        loop .ReadFirst5Sym
+        pop si
+
+
+
+
+
+        push si
+        mov cx,6
+        add si,14
+.ReadSecond6Sym:
+
+        mov ax,[ds:si]
+        cmp ax,$FFFF
+        je .Skip
+        cmp ax,$0000
+        je .Skip
+        mov byte[es:di],al
+
+        add si,2
+        inc di
+        inc byte[es:FNStr]
+
+        loop .ReadSecond6Sym
+        pop si
+
+
+
+
+
+        push si
+        mov cx,2
+        add si,28
+.ReadThird2Sym:
+
+        mov ax,[ds:si]
+        cmp ax,$FFFF
+        je .Skip
+        cmp ax,$0000
+        je .Skip
+        mov byte[es:di],al
+
+        add si,2
+        inc di
+        inc byte[es:FNStr]
+
+        loop .ReadThird2Sym
+
+.Skip:
+        pop si
+
+
+        sub si,32
+        pop cx
+        loop .LoopMain
+
+
+.EndLongDirEnt:
+
+        pop cx
+        inc cx
+        shl cx,5
+        add si,cx
+
+
+        cmp byte[ds:si+DirEntry_Attribute],10h
+        jne .EndProc
+
+        add byte[es:FNStr],4
+        movzx di,byte[es:FNStr]
+        add di,FNStr
+        mov byte[es:di],'R'
+        dec di
+        mov byte[es:di],'I'
+        dec di
+        mov byte[es:di],'D'
+
+
+.EndProc:
+
+        ret
+endp

@@ -1,0 +1,25 @@
+PSP:
+.int20h         dw   0x20CD
+.wNextSeg       dw   0
+.res1           db   0
+.abDispatch     db   5 dup 0
+.pfTerminate    dd   0
+.pfCtrlBreak    dd   0
+.pfCritError    dd   0
+.res2           db   20 dup 0
+.wParentPSP     dw   0
+.wEnvSeg        dw   0
+.res3           db   46 dup 0
+.rFCB_1         db   16 dup 0
+.rFCB_2         db   20 dup 0
+.bCmdTailLen    db   0
+.abCmdTail      db   127 dup 0
+
+
+
+OSSegment       dw ?
+ProgramSegment  dw ?
+ProgramSegmentArr dw 16 dup ?
+
+
+

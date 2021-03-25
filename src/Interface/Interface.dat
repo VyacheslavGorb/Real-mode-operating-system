@@ -1,0 +1,33 @@
+HelpStrI db 8,'Help (H)'
+AboutStrI db 9,'About (A)'
+FileNameStrI db 10,'File Name:'
+SizeStrI     db 5,'Size:'
+SlaWindowsStrI db  14,'    SlavOS 1.1'
+EnterStrI     db 5,'Enter'
+ExecuteStrI   db 6,'Select'
+ScrollUpStrI  db 9,'Scroll Up'
+ScrollDownStrI db 11,'Scroll Down'
+PowerMgmtStrI   db 10,'Switch off'
+EscStrI         db 8,'Sift+Tab'
+
+
+VideoMode db ?
+ScreenWidth db ?
+VideoPageNum db ?
+
+ScrollPos      dw 0 ;0 based
+CurrPrintPos   dw 0
+HighlightPos   dw 0
+PrevHighlightPos   dw 0
+PrintedEntCount  dw 0
+
+
+FNStrBuf db 75 dup 0
+
+numBuf db 10 dup 0
+
+search_all_str db '*',0
+long_name_buf db 256 dup 0
+
+isFirstIteration dw ?
+strcont db 10,10,'Press any key to continue...$'

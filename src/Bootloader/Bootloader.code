@@ -1,0 +1,27 @@
+ReadSector:; param through DAP    dh,si,ds,ax shouldn't be changed
+        mov cx,4
+.TryAgain:
+        dec cx
+        mov ah,42h     ;read from disk (LBA)
+        mov si,DAP     ;si:=DAP address
+        mov dx,word[DriveIndex]
+        int 13h
+        test cx,cx
+        jz Error_FileNotFound
+        test ah,ah
+        jnz .TryAgain
+        ret
+
+
+
+
+PrintString:
+        cmp byte[si],0
+        je .EndPrint
+        mov ah,0x0E
+        mov al,[si]
+        int 10h
+        inc si
+        jmp PrintString
+.EndPrint:
+        ret

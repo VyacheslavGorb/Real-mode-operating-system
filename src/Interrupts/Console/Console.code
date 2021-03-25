@@ -1,0 +1,216 @@
+
+
+proc  Console.SetCursorPos uses es ds, \
+      Position
+
+        push 0
+        pop es
+        push word[es:DSValueAddr]
+        pop ds
+
+        pusha
+        mov ax,[Position]
+        mov bl,80
+        div bl
+
+        mov dl,ah
+        mov dh,al
+
+
+        ;mov bx,word[VideoPageNum]
+		xor bx,bx
+        ;mov bh,bl
+
+        mov ah,02h
+        int 10h
+
+
+        popa
+        ret
+endp
+
+
+proc Console.WriteChar uses es ax ds di,\
+     CharCode
+
+        push 0
+        pop es
+        push word[es:DSValueAddr]
+        pop ds
+
+
+        mov  ax,[CharCode]
+        push TextModeVideoMemorySegm
+        pop  es
+
+        mov di,word[CursorPos]
+        shl di,1
+        mov [es:di],al
+
+
+
+        cmp word[CursorPos],2000-1
+        jne  .SkipScroll
+        stdcall Console.Scroll
+        jmp .EndProc
+
+.SkipScroll:
+        inc word[CursorPos]
+        stdcall Console.SetCursorPos, word[CursorPos]
+.EndProc:
+        ret
+endp
+
+
+proc Console.Scroll uses es ds
+
+        push 0
+        pop es
+        push word[es:DSValueAddr]
+        pop ds
+
+        pusha
+        xor cx,cx
+        mov dl,79
+        mov dh,24
+        mov bh,0fh
+        mov ax,0601h
+        int 10h
+
+        mov ax,word[CursorPos]
+        mov bl,80
+        div bl
+        mov al,ah
+        xor ah,ah
+        sub word[CursorPos],ax
+
+        stdcall Console.SetCursorPos, word[CursorPos]
+
+        popa
+        ret
+endp
+
+
+proc Console.SetCursorNextLine uses ax bx ds es
+
+        push 0
+        pop es
+        push word[es:DSValueAddr]
+        pop ds
+
+
+        cmp word[CursorPos],1920
+        jb  .SkipScroll
+        stdcall Console.Scroll
+        jmp .EndProc
+.SkipScroll:
+        add word[CursorPos],80
+        mov ax,word[CursorPos]
+        mov bl,80
+        div bl
+        mov al,ah
+        xor ah,ah
+        sub word[CursorPos],ax
+
+        stdcall Console.SetCursorPos, word[CursorPos]
+.EndProc:
+        ret
+endp
+
+
+proc Console.Backspace uses ax es ds di
+
+
+        push 0
+        pop es
+        push word[es:DSValueAddr]
+        pop ds
+
+        xor ax,ax
+        push TextModeVideoMemorySegm
+        pop  es
+
+        dec word[CursorPos]
+        stdcall Console.SetCursorPos, word[CursorPos]
+
+        mov di,word[CursorPos]
+        shl di,1
+        mov [es:di],al
+        ret
+endp
+
+
+
+proc Console.SetCursorBeginLine  uses ax bx es ds
+
+        push 0
+        pop es
+        push word[es:DSValueAddr]
+        pop ds
+
+        mov ax,word[CursorPos]
+        mov bl,80
+        div bl
+        mov al,ah
+        xor ah,ah
+        sub word[CursorPos],ax
+
+        stdcall Console.SetCursorPos, word[CursorPos]
+.EndProc:
+        ret
+endp
+
+
+
+proc Console.SelectVideoPage uses es ds, \
+     PageNum
+        pusha
+        mov ax,word[PageNum]
+        mov ah,05h
+        int 10h
+        popa
+        ret
+endp
+
+
+proc Console.SetTextMode
+        pusha
+        mov ax,0003h
+        int 10h
+        popa
+        ret
+endp
+
+
+proc Console.CleanVideoMemory uses es ax cx ds
+
+        push TextModeVideoMemorySegm
+        pop es
+        mov ax,0x0f00
+        mov cx,80*25
+        xor di,di
+        rep stosw
+        ret
+endp
+
+
+
+proc Console.Init
+        mov word[CursorCol] ,0
+        mov word[CursorRow] ,0
+        mov word[CursorPos] ,0
+
+        stdcall Console.SelectVideoPage,0
+        stdcall Console.SetTextMode
+        stdcall Console.CleanVideoMemory
+        stdcall Console.SetCursorPos,0
+        ret
+endp
+
+
+
+
+
+
+
+

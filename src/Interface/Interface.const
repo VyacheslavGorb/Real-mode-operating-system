@@ -1,0 +1,6 @@
+StartPos = 322
+LineCount     = 19
+TextModeVideoMemorySegm = $B800
+SAttr = 1eh
+HAttr = 3fh
+LastLineNum = 19

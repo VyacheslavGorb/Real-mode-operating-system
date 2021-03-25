@@ -1,0 +1,1064 @@
+
+include 'Console\Console.const'
+include 'FAT\FAT.const'
+include 'ExecuteProgram\ExecProg.const'
+include 'File\File.const'
+
+IntHandler.21h:     ;ds: OSSegment
+        
+        push bp
+		push si
+		push di
+		;push es
+		
+		push es
+		push ax
+		
+		
+		push ax
+		push dx
+		
+		mov al,ah
+		mov dx,03F8h
+		out dx,al
+		
+		pop dx
+		pop ax
+		
+
+
+        push 0
+        pop es
+
+        mov bp,word[es:OSDSValueAddr]
+        mov es,bp
+		
+        movzx bp,ah
+        shl bp,1
+        add bp, Int21hTable
+        stdcall word[es:bp]
+		
+		
+		
+		mov di,ax
+		
+		pop ax
+		cmp ah,35h
+		jne .Restore
+		
+.SkipRestore:
+		pop ax
+		jmp .EndResore
+.Restore:
+		pop es
+.EndResore:		
+		mov ax,di
+		
+		
+		
+
+		;pop es
+		pop di
+		pop si
+        pop bp
+		
+		
+		
+		push bp
+		push ax
+		
+		mov bp,sp
+		mov ax,word[ss:bp+8]
+		and ax,0xFFFE
+		mov word[ss:bp+8],ax
+		
+		pop ax
+		pop bp
+		
+		
+        iret
+		
+		
+proc LOGPROC uses bx
+		xchg bx,bx
+		mov al,ah
+		mov dx,03F8h
+		out dx,al		
+		ret
+endp
+
+
+proc Proc31h
+		
+		xor dx,dx
+		mov es,dx
+		mov di, word[es:ProgsCount]
+		dec di
+		shl di,4
+		jmp dword[es:di + JmpOSAddr]
+endp
+
+
+proc Proc4ah
+		;mov bx,0x0AAA
+		ret
+endp
+
+
+proc Proc00h
+        int 20h
+        ret
+endp
+
+
+
+proc Proc2ah
+		mov cx, 2020
+		mov dh, 12
+		mov dl, 27
+		mov al, 0
+		ret
+endp
+
+
+
+proc Proc01h
+
+        cmp byte[es:Proc01hPrevAL],0
+        je  .ReturnExtendedASCII
+
+        xor ax,ax
+        int 16h
+
+        cmp al,03h
+        jne .L1
+        int 20h
+.L1:
+        cmp al,0dh
+        jne .L2
+
+        stdcall Console.SetCursorNextLine
+
+
+        jmp .EndProc
+.L2:
+
+        stdcall Console.WriteChar,ax
+
+        mov [es:Proc01hPrevAL],al
+        mov [es:Proc01hPrevAH],ah
+
+        jmp .EndProc
+
+.ReturnExtendedASCII:
+        mov al,byte[es:Proc01hPrevAH]
+        mov [es:Proc01hPrevAL],1
+        mov [es:Proc01hPrevAH],1
+.EndProc:
+        ret
+
+endp
+
+
+
+
+proc Proc02h
+
+        cmp dl,03h
+        jne .L0
+        int 20h
+.L0:
+        cmp dl,0dh
+        jne .L1
+        stdcall Console.SetCursorBeginLine
+
+.L1:
+        cmp dl,0ah
+        jne .L2
+
+        stdcall Console.SetCursorNextLine
+        jmp .EndProc
+.L2:
+        cmp dl,08h
+        jne .L3
+        cmp word[es:CursorPos],0
+        je .EndProc
+        dec word[es:CursorPos]
+        stdcall Console.SetCursorPos, word[es:CursorPos]
+        jmp .EndProc
+.L3:
+        stdcall Console.WriteChar,dx
+.EndProc:
+        ret
+endp
+
+
+
+
+
+
+
+proc Proc07h
+
+        cmp byte[es:Proc07hPrevAL],0
+        je  .ReturnExtendedASCII
+
+        xor ax,ax
+        int 16h
+
+        mov [es:Proc07hPrevAL],al
+        mov [es:Proc07hPrevAH],ah
+
+        jmp .EndProc
+
+.ReturnExtendedASCII:
+        mov al,byte[ds:Proc07hPrevAH]
+        mov [es:Proc07hPrevAL],1
+        mov [es:Proc07hPrevAH],1
+.EndProc:
+        ret
+endp
+
+
+
+
+
+
+
+
+proc Proc08h
+
+        cmp byte[es:Proc08hPrevAL],0
+        je  .ReturnExtendedASCII
+
+        xor ax,ax
+        int 16h
+
+        cmp al,03h
+        jne .L1
+        int 20h
+.L1:
+        mov [es:Proc08hPrevAL],al
+        mov [es:Proc08hPrevAH],ah
+
+        jmp .EndProc
+
+.ReturnExtendedASCII:
+        mov al,byte[ds:Proc08hPrevAH]
+        mov [es:Proc08hPrevAL],1
+        mov [es:Proc08hPrevAH],1
+.EndProc:
+        ret
+
+endp
+
+
+
+proc Proc09h uses si di es ds bx
+	
+        ;push dx
+        ;push ax
+        ;mov ax,10h
+        ;mov dx,3F8h
+        ;out dx,ax
+        ;pop ax
+        ;pop dx
+
+        pushf
+        mov  si,dx
+        cld
+.Loop:
+        lodsb
+        cmp al,'$'
+        je .EndProc
+
+        cmp al,0ah
+        jne .L0
+        stdcall Console.SetCursorNextLine
+        jmp .Loop
+.L0:
+        cmp al,0dh
+        jne .L1
+        stdcall Console.SetCursorBeginLine
+        jmp .Loop
+.L1:
+        stdcall Console.WriteChar,ax
+        jmp .Loop
+
+.EndProc:
+        popf
+        ret
+endp
+
+
+
+proc Proc0Ah uses ds es di cx si bx dx
+
+        push ds
+        pop  es
+        mov di,dx
+        mov si,di
+        add di,2
+
+        movzx cx,byte[es:si]
+        mov   byte[es:si+1],0
+        test cx,cx
+        je .EndProc
+
+        cmp cx,1
+        je .Mov0Dh
+.Loop:
+        dec cx
+.L0:
+        test cx,cx
+        jz  .WaitForBackspace
+        xor ax,ax
+        int 16h
+
+        cmp ah,1ch
+        je .EndInput
+
+        cmp al, 03h
+        jne .L1
+        int 20h
+.L1:
+
+        cmp ah,0eh
+        jne .L2
+
+        movzx bx,byte[es:si]
+        dec bx
+        cmp cx,bx
+        je .L0
+
+        stdcall Console.Backspace
+        dec byte[es:si+1]
+        inc cx
+        dec di
+        jmp .L0
+
+.L2:
+        inc byte[es:si+1]
+        stosb
+
+        stdcall Console.WriteChar,ax
+        jmp .Loop
+
+.WaitForBackspace:
+        xor ax,ax
+        int 16h
+        cmp ah,1ch
+        je  .EndInput
+        cmp ah,0eh
+        jne .L0
+        stdcall Console.Backspace
+        dec byte[es:si+1]
+        inc cx
+        dec di
+        jmp .L0
+
+.EndInput:
+        mov word[es:di],0dh
+        ;inc byte[es:si+1]
+        jmp .EndProc
+.Mov0Dh:
+        mov byte[es:si+2],0dh
+        ;inc byte[es:si+1]
+.EndProc:
+        ret
+endp
+
+
+
+
+proc Proc0Bh
+
+        mov ah,01h
+        int 16h
+        jnz .L1
+        xor al,al
+        xor ah,ah
+        jmp .EndProc
+.L1:
+        cmp al,03h
+        jne .L2
+        int 20h
+.L2:
+        mov al,$ff
+.EndProc:
+        ret
+endp
+
+
+
+
+
+proc Proc0Ch
+
+        push bp
+        movzx bp,al
+.Read:
+        ;mov ax,1
+        ;int 16h
+        ;jz .Cont
+        ;xor ax,ax
+        ;int 16h
+        ;jmp .Read
+.Cont:
+        mov word[es:Proc01hPrevAL],1
+        mov word[es:Proc07hPrevAL],1
+        mov word[es:Proc08hPrevAL],1
+
+
+        shl bp,1
+        add bp, Int21hTable
+        stdcall word[es:bp]
+
+        pop bp
+        ret
+endp
+
+
+
+proc Proc25h uses ax bx cx es ds
+
+        push 0
+        pop es
+        movzx bx,al
+        mov ax,dx
+        mov cx,ds
+
+        shl bx,2
+        pushf
+        cli
+        mov word[es:bx],ax
+        mov word[es:bx+2],cx
+		sti
+        popf
+        ret
+endp
+
+
+
+
+proc Proc2Ch uses bx
+
+        mov ah,02h
+        int 1ah
+
+        movzx ax,ch
+        stdcall ConvertBcdToDec, ax
+        mov ch,bl
+
+        movzx ax,cl
+        stdcall ConvertBcdToDec, ax
+        mov cl,bl
+
+        movzx ax,dh
+        stdcall ConvertBcdToDec, ax
+        mov dh,bl
+
+        ;stdcall Random
+
+        mov dl,43
+.Loop:
+        cmp dl,100
+        jb .EndProc
+        sub dl,43
+        jmp .Loop
+.EndProc:
+        ret
+endp
+
+
+
+
+proc Proc30h 
+		mov al,3
+		mov ah,20
+		ret
+endp
+
+
+
+
+proc Proc35h uses di
+		push 0
+		pop es
+        movzx di,al
+        shl di,2
+        mov bx, word[es:di]
+        push word[es:di+2]
+		pop es
+		ret
+endp
+
+
+
+proc Proc3bh uses es ds si di ax bx cx
+
+
+		mov si,dx		
+		mov cx,11
+		mov di,DirToFindName
+		rep movsb
+		push es
+		pop ds
+		
+		stdcall FAT.FindFileInRootDir,DirToFindName
+		
+		test ax,ax
+		jz .Error
+		
+		mov si,ax ;mov si, dir_offset
+		
+		push es
+
+        push word[CurrentDirSegment]
+        pop es
+
+        mov ax,[es:si+26]
+
+        pop es
+
+
+
+        mov bx,ax
+        mov word[CurrentDirSector],ax
+
+        test bx,bx
+        jnz .NotRootDir
+        stdcall FAT.ReloadRootDir
+
+        push word[RootDirSegment]
+        pop  word[CurrentDirSegment]
+        jmp .EndProc
+
+
+.NotRootDir:
+        push DirMemSegment
+        pop word[CurrentDirSegment]
+
+        stdcall FAT.ReloadDir, word[CurrentDirSector]
+		jmp .EndProc
+.Error:
+		mov ax,2
+		stc
+
+.EndProc:
+		
+		ret
+endp
+
+
+
+
+
+proc Proc3dh uses es ds cx dx bx si di
+		mov cx,11
+		mov di,FileToOpenName
+		mov al, ' ' 				
+		rep stosb
+		
+		
+		
+		mov si,dx
+		mov di, FileToOpenName
+        mov cx, 8
+.loop_str:
+        cmp byte[ds:si],'.'
+        je .Exit1
+        movsb
+        loop .loop_str
+.Exit1:
+
+        mov si,dx
+.loop_ext:
+        cmp byte[ds:si],0
+        je .copy_ext
+        inc si
+        jmp .loop_ext
+.copy_ext:
+        movzx ax,byte[ds:si-1]
+        mov byte[es:FileToOpenName+10],al
+
+        movzx ax,byte[ds:si-2]
+        mov byte[es:FileToOpenName+9],al
+
+        movzx ax,byte[ds:si-3]
+        mov byte[es:FileToOpenName+8],al	
+		
+		
+		push es
+		pop ds
+		
+		
+		stdcall FAT.FindFileInRootDir, FileToOpenName
+		stdcall File.LoadFile,ax
+		
+		mov ax,word[ds:OpenedFilesCount]
+		dec ax
+		
+		
+		ret
+endp
+
+
+
+
+
+proc Proc42h uses bx cx
+		shl bx,1
+.MoveToStart:
+		cmp al,0 
+		jne .MoveToPos
+		mov word[es:bx+OpendFileReadOffset],0
+		jmp .EndProc
+.MoveToPos:
+		cmp al,1
+		jne .MoveToEnd
+		
+		add word[es:bx+OpendFileReadOffset],dx
+		
+		jmp .EndProc
+.MoveToEnd:
+		cmp al,2
+		jne .EndProc
+		mov ax,word[es:bx+OpenedFilesSegmTable]
+		mov dx,word[es:bx+OpenedFilesSegmTable+2]
+		sub dx,ax
+		shl dx,4
+		add word[es:bx+OpendFileReadOffset],dx
+		jmp .EndProc
+		
+.EndProc:
+		xor ax,ax
+		mov dx,word[es:bx+OpendFileReadOffset]
+		ret
+endp
+
+
+
+
+proc Proc3fh uses ds es dx bx cx si di
+
+		shl bx,1 
+		
+		mov ax,es	;swap es ds
+		push ds 
+		pop es
+		mov ds,ax
+		
+		mov di,dx ; es:di is set
+		
+		push ds
+		
+		mov ax, word[ds:bx+OpenedFilesSegmTable]
+		mov dx, word[ds:bx+OpendFileReadOffset]
+		mov ds,ax
+		mov si,dx
+		push cx
+		rep movsb
+		pop ax
+		pop ds
+		
+		ret
+endp
+
+
+
+
+proc Proc4ch
+        xor dx,dx
+		mov es,dx
+		mov di, word[es:ProgsCount]
+		dec di
+		shl di,4
+		jmp dword[es:di + JmpOSAddr]
+endp
+
+
+proc Proc4bh uses es ds si di bx cx
+
+		
+		xchg bx,bx
+		mov cx,11
+		mov di,ExecProgFileName
+		mov al, ' ' 				
+		rep stosb
+		
+		
+		
+		mov si,dx
+		mov di, ExecProgFileName
+        mov cx, 8
+.loop_str:
+        cmp byte[ds:si],'.'
+        je .Exit1
+        movsb
+        loop .loop_str
+.Exit1:
+
+        mov si,dx
+.loop_ext:
+        cmp byte[ds:si],0
+        je .copy_ext
+        inc si
+        jmp .loop_ext
+.copy_ext:
+        movzx ax,byte[ds:si-1]
+        mov byte[es:ExecProgFileName+10],al
+
+        movzx ax,byte[ds:si-2]
+        mov byte[es:ExecProgFileName+9],al
+
+        movzx ax,byte[ds:si-3]
+        mov byte[es:ExecProgFileName+8],al	
+
+		
+		
+		push es
+		pop ds
+		
+		
+		
+		
+.Com:
+		cmp byte[es:ExecProgFileName+8],'C'
+        jne .Exe
+        cmp byte[es:ExecProgFileName+9],'O'
+        jne .Exe
+		cmp byte[es:ExecProgFileName+10],'M'
+        jne .Exe		
+		
+		stdcall Console.Init
+        stdcall Execute.ComProgram,ExecProgFileName
+
+
+		jmp .EndProc
+.Exe:
+
+		cmp byte[es:ExecProgFileName+8],'E'
+        jne .EndProc
+        cmp byte[es:ExecProgFileName+9],'X'
+        jne .EndProc
+		cmp byte[es:ExecProgFileName+10],'E'
+        jne .EndProc
+		
+		stdcall Console.Init
+        stdcall Execute.ExeProgram,ExecProgFileName
+		
+		
+.EndProc:
+		ret
+	
+endp
+
+
+
+proc Proc4eh uses bx si di es ds cx
+
+			
+		mov cx,11
+		mov di,FileToFindName
+		mov al, ' ' 				
+		rep stosb
+		
+		
+		
+		mov si,dx
+		mov di, FileToFindName
+        mov cx, 8
+.loop_str:
+        cmp byte[ds:si],'.'
+        je .Exit1
+        movsb
+        loop .loop_str
+.Exit1:
+
+        mov si,dx
+.loop_ext:
+        cmp byte[ds:si],0
+        je .copy_ext
+        inc si
+        jmp .loop_ext
+.copy_ext:
+        movzx ax,byte[ds:si-1]
+        mov byte[es:FileToFindName+10],al
+
+        movzx ax,byte[ds:si-2]
+        mov byte[es:FileToFindName+9],al
+
+        movzx ax,byte[ds:si-3]
+        mov byte[es:FileToFindName+8],al	
+
+		
+		
+		push es
+		pop ds
+	
+		stdcall FAT.FindFileInRootDir,FileToFindName
+		
+		mov word[FIR.lSize],dx
+		
+		test ax,ax
+		jz .Error
+		
+		push ax
+		
+		mov word[PrevFoundFileOffset],ax
+		
+		mov di,ax
+		push word[CurrentDirSegment]
+        pop es
+		
+		movzx ax,byte[es:di+DirEntry_Attribute]
+		mov byte[FIR.bArrt],al
+		
+		mov ax,word[es:di + DirEntry_Time]
+		mov word[FIR.rTime],ax
+		
+		mov ax,word[es:di + DirEntry_Date]
+		mov word[FIR.rDate],ax
+		
+		
+		
+		mov ax,ds	;swap es ds
+		push es
+		pop ds
+		mov es,ax
+		
+		pop ax
+		
+		mov si,ax
+		mov di,FIR.fName
+		mov cx, 11		
+		rep movsb
+		mov byte[es:di],0
+		
+		mov si,ax
+		stdcall FAT.ReadFileName
+		
+		
+		mov ax,ds	;swap es ds
+		push es
+		pop ds
+		mov es,ax
+		
+		
+		push es
+		push di
+		push ds
+		
+		push 0
+		pop es
+		
+		mov di, word[es:ProgsCount]
+		dec di
+		shl di,1
+		add di, ProgramSegmentArr
+		mov di,word[ds:di]
+		mov es,di
+		mov di,80h
+		
+		mov si,FIR
+		
+		mov cx,43
+		rep movsb
+		
+		
+		pop ds
+		pop di
+		pop es		
+		
+		
+
+		mov dx,FNStr
+		mov ax,ds
+		clc
+		
+		jmp .EndProc
+.Error:
+		mov ax,2
+		stc
+.EndProc:
+	
+	ret
+endp
+
+
+proc Proc4fh uses bx si di ds es cx
+
+		;mov si,dx		
+		;mov cx,11
+		;mov di,FileToFindName
+		;rep movsb
+		push es
+		pop ds
+	
+		stdcall FAT.FindNextFile,FileToFindName, word[PrevFoundFileOffset]
+		mov word[FIR.lSize],dx
+		test ax,ax
+		jz .Error
+		
+		push ax
+		
+		mov word[PrevFoundFileOffset],ax
+		
+		mov di,ax
+		push word[CurrentDirSegment]
+        pop es
+		
+		movzx ax,byte[es:di+DirEntry_Attribute]
+		mov byte[FIR.bArrt],al
+		
+		mov ax,word[es:di + DirEntry_Time]
+		mov word[FIR.rTime],ax
+		
+		mov ax,word[es:di + DirEntry_Date]
+		mov word[FIR.rDate],ax
+		
+		
+		
+		mov ax,ds	;swap es ds
+		push es
+		pop ds
+		mov es,ax
+		
+		pop ax
+		
+		mov si,ax
+		mov di,FIR.fName
+		mov cx, 11		
+		rep movsb
+		mov byte[es:di],0
+		
+		mov si,ax
+		stdcall FAT.ReadFileName
+		
+		mov ax,ds	;swap es ds
+		push es
+		pop ds
+		mov es,ax
+		
+		
+		
+		push es
+		push di
+		push ds
+		
+		push 0
+		pop es
+		
+		mov di, word[es:ProgsCount]
+		dec di
+		shl di,1
+		add di, ProgramSegmentArr
+		mov di,word[ds:di]
+		mov es,di
+		mov di,80h
+		
+		mov si,FIR
+		
+		mov cx,43
+		rep movsb
+		
+		
+		pop ds
+		pop di
+		pop es	
+		
+		
+
+		mov dx,FNStr
+		mov ax,ds
+		clc
+		
+		jmp .EndProc
+.Error:
+		mov ax,2
+		stc
+.EndProc:
+		ret
+endp
+
+
+
+
+proc ConvertBcdToDec,\
+     BcdNum;result in bl
+
+        mov ax,[BcdNum]
+        ror ax,4
+        shr ah,4
+        mov bl,ah
+        mov bh,10
+        mul bh
+        add bl,al
+        ret
+endp
+
+
+
+proc Random uses dx bx
+
+        mov ax,word[es:PrevRandomValue]
+        shl ax,6
+        add ax,RandomC
+        xor dx,dx
+        mov bx,$FFFF
+        div bx
+        mov ax,dx
+        mov word[es:PrevRandomValue],ax
+        ret
+endp
+
+
+proc IntHandler.20h
+		xor dx,dx
+		mov es,dx
+		mov di, word[es:ProgsCount]
+		dec di
+		shl di,4
+		jmp dword[es:di + JmpOSAddr]
+endp
+
+
+proc Int.SetInterruptHandlerAddr uses ax bx cx es,\
+     HandlerNum,HandlerLabel,HandlerSegment
+
+        push 0
+        pop es
+        mov ax,[HandlerLabel]
+        mov cx,[HandlerSegment]
+        mov bx,[HandlerNum]
+        shl bx,2
+        pushf
+        cli
+        mov word[es:bx],ax
+        mov word[es:bx+2],cx
+		sti
+        popf
+        ret
+endp
+
+
+
+include 'Console\Console.code'
+include 'FAT\FAT.code'
+include 'ExecuteProgram\ExecProg.code'
+include 'File\File.code'
+
+
+
+
+
+include 'Console\Console.dat'
+include 'FAT\FAT.dat'
+include 'ExecuteProgram\ExecProg.dat'
+include 'File\File.dat'
+
+
+
+
+
